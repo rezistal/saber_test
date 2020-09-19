@@ -1,57 +1,82 @@
-<?php           
+<?php
 ini_set('display_errors', 1);
 ini_set('max_execution_time', 0);
 ini_set("memory_limit", "4096M");
+
+# Контрольный пример
 # $arr = array(
-#     'nodes' => array(
-#         '0000000068401f1c000000006f9728c3' => array(
-#             'prev' => null,
-#             'next' => '0000000068401f1d000000006f9728c3',
-#             'rand' => null,
-#             'data' => '1',
-#             ), 
-#         '0000000068401f1d000000006f9728c3' => array(
-#             'prev' => '0000000068401f1c000000006f9728c3',
-#             'next' => '0000000068401f1a000000006f9728c3',
-#             'rand' => '0000000068401f1d000000006f9728c3',
-#             'data' => '2',
-#             ), 
-#         '0000000068401f1a000000006f9728c3' => array(
-#             'prev' => '0000000068401f1d000000006f9728c3',
-#             'next' => '0000000068401f1b000000006f9728c3',
-#             'rand' => '0000000068401f18000000006f9728c3',
-#             'data' => '3',
-#             ), 
-#         '0000000068401f1b000000006f9728c3' => array(
-#             'prev' => '0000000068401f1a000000006f9728c3',
-#             'next' => '0000000068401f18000000006f9728c3',
-#             'rand' => '0000000068401f1c000000006f9728c3',
-#             'data' => '4',
-#             ), 
-#         '0000000068401f18000000006f9728c3' => array(
-#             'prev' => '0000000068401f1b000000006f9728c3',
-#             'next' => null,
-#             'rand' => null,
-#             'data' => '5',
+#     '0000000023b9940300000000439b296e' => array(
+#         'class_name' => 'ListRandDerived',
+#         'attributes' => array(
+#             'head' => '0000000068401f1c000000006f9728c3',
+#             'tail' => '0000000068401f18000000006f9728c3',
+#             'count' => 5,
 #             ),
-#         ),
-#     'head' => '0000000068401f1c000000006f9728c3',
-#     'tail' => '0000000068401f18000000006f9728c3',
-#     'count' => 5,
+#         'nodes' => array(
+#             '0000000068401f1c000000006f9728c3' => array(
+#                 'class_name' => 'ListNode',
+#                 'attributes' => array(
+#                     'prev' => null,
+#                     'next' => '0000000068401f1d000000006f9728c3',
+#                     'rand' => null,
+#                     'data' => '1',
+#                     ),
+#                 ),
+#             '0000000068401f1d000000006f9728c3' => array(
+#                 'class_name' => 'ListNodeDerived',
+#                 'attributes' => array(
+#                     'prev' => '0000000068401f1c000000006f9728c3',
+#                     'next' => '0000000068401f1a000000006f9728c3',
+#                     'rand' => '0000000068401f1d000000006f9728c3',
+#                     'data' => '2',
+#                     ),
+#                 ),
+#             '0000000068401f1a000000006f9728c3' => array(
+#                 'class_name' => 'ListNode',
+#                 'attributes' => array(
+#                     'prev' => '0000000068401f1d000000006f9728c3',
+#                     'next' => '0000000068401f1b000000006f9728c3',
+#                     'rand' => '0000000068401f18000000006f9728c3',
+#                     'data' => '3',
+#                     ),
+#                 ),
+#             '0000000068401f1b000000006f9728c3' => array(
+#                 'class_name' => 'ListNodeDerived',
+#                 'attributes' => array(
+#                     'prev' => '0000000068401f1a000000006f9728c3',
+#                     'next' => '0000000068401f18000000006f9728c3',
+#                     'rand' => '0000000068401f1c000000006f9728c3',
+#                     'data' => '4',
+#                     ),
+#                 ),
+#             '0000000068401f18000000006f9728c3' => array(
+#                 'class_name' => 'ListNode',
+#                 'attributes' => array(
+#                     'prev' => '0000000068401f1b000000006f9728c3',
+#                     'next' => null,
+#                     'rand' => null,
+#                     'data' => '5',
+#                     ),
+#                 ),
+#             ),
+#
+#     ),
 # );
 # var_dump(json_encode($arr));
 # die();
 
+interface ICommonBehaviour{
 
-class ListNode
-{
+}
+
+class ListNode implements ICommonBehaviour{
     /*
     * @var ListNode $prev
-    * 
+    *
     * @var ListNode $next
-    * 
+    *
     * @var ListNode $rand
-    * 
+    *
     * @var string $data
     */
     public $prev;
@@ -60,86 +85,107 @@ class ListNode
     public $data;
 }
 
-class ListRand
-{
+class ListNodeDerived extends ListNode{
+
+}
+
+class ListRand implements ICommonBehaviour{
    /*
    * @var ListNode $head
-   * 
+   *
    * @var ListNode $tail
-   * 
+   *
    * @var int $count
-   * 
-   * @var array of ListNode's $children
+   *
+   * @var array of ListNode's $nodes
    */
     public $head;
     public $tail;
     public $count;
-    
-    protected $children = array();
-        
-    protected function add_children($hash, ListNode $node)
-    {
-        $this->children[$hash] = $node;
+
+    protected static $nodes = array();
+
+    protected static function add_nodes($hash, ListNode $node){
+        self::$nodes[$hash] = $node;
     }
 
-    public static function deserialize(String $input)
-    {
+    protected static function get_deserialized_value($var_value){
+        if(isset($var_value)){
+            if(array_key_exists($var_value, self::$nodes) && is_object(self::$nodes[$var_value])){
+                return self::$nodes[$var_value];
+            }
+            return $var_value;
+        }
+        return null;
+    }
+
+    protected static function deserialize_alg(Array $attributes, ICommonBehaviour $instance){
+        $vars = get_object_vars($instance);
+        foreach($vars as $var_name => $var_value){
+            $hash_or_realdata = $attributes[$var_name];
+            $instance->$var_name = self::get_deserialized_value($hash_or_realdata);
+        }
+    }
+
+    public static function deserialize(String $input){
         $js = json_decode($input, true);
-        $result = new ListRand();
-        
+        $js = reset($js);
+
         $nodes = $js['nodes'];
-        $head = $js['head'];
-        $tail = $js['tail'];
-        $count = $js['count'];
-
         foreach($nodes as $hash => $node){
-            $result->add_children($hash, new ListNode());
+            self::add_nodes($hash, new $node['class_name']);
         }
+
+        foreach(self::$nodes as $hash => $node_instance){
+            self::deserialize_alg($nodes[$hash]['attributes'], $node_instance);
+        }
+
+        $result = new $js['class_name'];
+        self::deserialize_alg($js['attributes'], $result);
         
-        foreach($result->children as $hash => $node_instance){
-            $key_next = $nodes[$hash]['next'];
-            $key_prev = $nodes[$hash]['prev'];
-            $key_rand = $nodes[$hash]['rand'];
-            if(isset($key_next)){
-                $node_instance->next = $result->children[$key_next];
-            }
-            if(isset($key_prev)){
-                $node_instance->prev = $result->children[$key_prev];
-            }
-            if(isset($key_rand)){
-                $node_instance->rand = $result->children[$key_rand];
-            }
-            $node_instance->data = $nodes[$hash]['data'];
-        }
-
-        $result->head = $result->children[$head];
-        $result->tail = $result->children[$tail];
-        $result->count = $count;
-        unset($result->children);
+        self::$nodes = array();
         return $result;
-
     }
-    
-    public function serialize()
-    {
+
+    protected function get_serialized_value($var_name, $var_value){
+        if(is_object($var_value)){
+            return spl_object_hash($var_value);
+        }
+        return $var_value;
+    }
+
+    protected function serialize_alg(ICommonBehaviour $instance){
+        $attributes = array();
+        $vars = get_object_vars($instance);
+        foreach($vars as $var_name => $var_value){
+            $attributes[$var_name] = $this->get_serialized_value($var_name, $var_value);
+        }
+        return array('class_name' => get_class($instance), 'attributes' => $attributes);
+    }
+
+    public function serialize(){
+        $hash = spl_object_hash($this);
         $arr = array();
-        $arr['count'] = $this->count;
-        $arr['head'] = spl_object_hash($this->head);
-        $arr['tail'] = spl_object_hash($this->tail);
+        $arr[$hash] = $this->serialize_alg($this);
+
+        $nodes = array();
         $node = $this->head;
-        while (isset($node)){
-            $hash = spl_object_hash($node);
-            $arr['nodes'][$hash]['prev'] = isset($node->prev)?spl_object_hash($node->prev):null;
-            $arr['nodes'][$hash]['next'] = isset($node->next)?spl_object_hash($node->next):null;
-            $arr['nodes'][$hash]['rand'] = isset($node->rand)?spl_object_hash($node->rand):null;
-            $arr['nodes'][$hash]['data'] = $node->data;
+        while (is_object($node)){
+            $nodes[spl_object_hash($node)] = $this->serialize_alg($node);
             $node = $node->next;
         }
+        $arr[$hash]['nodes'] = $nodes;
         return json_encode($arr);
     }
+
 }
 
-$input = '{"count":5,"head":"0000000058ed9105000000007fb645e3","tail":"0000000058ed9101000000007fb645e3","nodes":{"0000000058ed9105000000007fb645e3":{"prev":null,"next":"0000000058ed9104000000007fb645e3","rand":null,"data":"1"},"0000000058ed9104000000007fb645e3":{"prev":"0000000058ed9105000000007fb645e3","next":"0000000058ed9103000000007fb645e3","rand":"0000000058ed9104000000007fb645e3","data":"2"},"0000000058ed9103000000007fb645e3":{"prev":"0000000058ed9104000000007fb645e3","next":"0000000058ed9102000000007fb645e3","rand":"0000000058ed9101000000007fb645e3","data":"3"},"0000000058ed9102000000007fb645e3":{"prev":"0000000058ed9103000000007fb645e3","next":"0000000058ed9101000000007fb645e3","rand":"0000000058ed9105000000007fb645e3","data":"4"},"0000000058ed9101000000007fb645e3":{"prev":"0000000058ed9102000000007fb645e3","next":null,"rand":null,"data":"5"}}}';
+class ListRandDerived extends ListRand{
+
+}
+
+
+$input = '{"0000000023b9940300000000439b296e":{"class_name":"ListRandDerived","attributes":{"head":"0000000068401f1c000000006f9728c3","tail":"0000000068401f18000000006f9728c3","count":5},"nodes":{"0000000068401f1c000000006f9728c3":{"class_name":"ListNode","attributes":{"prev":null,"next":"0000000068401f1d000000006f9728c3","rand":null,"data":"1"}},"0000000068401f1d000000006f9728c3":{"class_name":"ListNodeDerived","attributes":{"prev":"0000000068401f1c000000006f9728c3","next":"0000000068401f1a000000006f9728c3","rand":"0000000068401f1d000000006f9728c3","data":"2"}},"0000000068401f1a000000006f9728c3":{"class_name":"ListNode","attributes":{"prev":"0000000068401f1d000000006f9728c3","next":"0000000068401f1b000000006f9728c3","rand":"0000000068401f18000000006f9728c3","data":"3"}},"0000000068401f1b000000006f9728c3":{"class_name":"ListNodeDerived","attributes":{"prev":"0000000068401f1a000000006f9728c3","next":"0000000068401f18000000006f9728c3","rand":"0000000068401f1c000000006f9728c3","data":"4"}},"0000000068401f18000000006f9728c3":{"class_name":"ListNode","attributes":{"prev":"0000000068401f1b000000006f9728c3","next":null,"rand":null,"data":"5"}}}}}';
 $instance = ListRand::deserialize($input);
 
 $output = $instance->serialize();
