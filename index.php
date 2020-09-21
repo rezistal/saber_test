@@ -4,7 +4,6 @@ ini_set('max_execution_time', 0);
 ini_set("memory_limit", "4096M");
 
 interface ICommonBehaviour{
-    public function getInstanceId();
 }
 
 class ListNode implements ICommonBehaviour{
@@ -38,7 +37,6 @@ class ListNode implements ICommonBehaviour{
 class ListNodeDerived extends ListNode{
 
 }
-
 class ListRand implements ICommonBehaviour{
    /*
    * @var ListNode $head
@@ -53,27 +51,10 @@ class ListRand implements ICommonBehaviour{
     public $tail;
     public $count;
 
-    protected static $nodes = array();
-
-    protected $_instanceId  = null;
-    protected static $instances = 0;
-
-    public function getInstanceId(){
-        return get_class($this).'_'.$this->_instanceId;
-    }
-
-    public function __construct(){
-        $this->_instanceId = ++self::$instances;
-    }
-
-    protected static function add_nodes($hash, ListNode $node){
-        self::$nodes[$hash] = $node;
-    }
-
     protected static function get_deserialized_value($type, $value){
         switch ($type){
             case 'object':
-                return self::$nodes[$value];
+                return new $value;
             case 'NULL':
                 return null;
             default:
@@ -82,31 +63,50 @@ class ListRand implements ICommonBehaviour{
         }
     }
 
-    protected static function deserialize_alg(Array $attributes, ICommonBehaviour $instance){
-        foreach($attributes as $attribute => $attribute_properties){
-            $type = $attribute_properties['type'];
-            $value = $attribute_properties['value'];
-            $instance->$attribute = self::get_deserialized_value($type, $value);
-        }
-    }
     public static function deserialize(ISerializeStrategy $strategy, String $input){
         $arr = $strategy->read($input);
-
         $nodes = $arr['nodes'];
-        foreach($nodes as $hash => $node){
-            self::add_nodes($hash, new $node['class_name']);
-        }
-
-        foreach(self::$nodes as $hash => $node_instance){
-            self::deserialize_alg($nodes[$hash]['attributes'], $node_instance);
-        }
+        $attribute = $arr['attributes'];
 
         $result = new $arr['class_name'];
-        self::deserialize_alg($arr['attributes'], $result);
+        $id = $attribute['head']['value'];
+        $result->head = self::get_deserialized_value($attribute['head']['type'], $nodes[$id]['class_name']);
+        $result->count = self::get_deserialized_value($attribute['count']['type'], $attribute['count']['value']);
+        $promise = '';
+        $pointer = $result->head;
+
+        while($pointer){
+            $attributes = $nodes[$id]['attributes'];
+            $next_id = $attributes['next']['value'];
+            $rand_id = $attributes['rand']['value'];
+
+            $pointer->data = self::get_deserialized_value($attributes['data']['type'], $attributes['data']['value']);
+
+            if(isset($next_id)){
+                $pointer->next = self::get_deserialized_value($attributes['next']['type'], $nodes[$next_id]['class_name']);
+                $pointer->next->prev = $pointer;
+            } else {
+                $result->tail = $pointer;
+            }
+
+            $promise .= isset($rand_id)
+                        ?'$result->head'
+                            .str_repeat('->next', $nodes[$id]['counter'])
+                            .'->rand = $result->head'
+                            .str_repeat('->next', $nodes[$rand_id]['counter'])
+                            .';'
+                        :'';
+
+            $id = $next_id;
+            $pointer = $pointer->next;
+
+        }
+
+        eval($promise);
         return $result;
     }
 
-    protected static function get_serialized_value($var_value){
+    protected static function get_serialized_value($var_name, $var_value){
         $type = gettype($var_value);
         switch ($type){
             case 'object':
@@ -123,26 +123,23 @@ class ListRand implements ICommonBehaviour{
 
         $vars = get_object_vars($instance);
         foreach($vars as $var_name => $var_value){
-            $attributes[$var_name] = self::get_serialized_value($var_value);
+            $attributes[$var_name] = self::get_serialized_value($var_name, $var_value);
         }
-        # Привет первый костыль. Так как в serialize_alg($this) передается
-        #   экземпляр класса то получаем доступ к приватному аттрибуту,
-        #   чего хотелось бы избежать
-        unset($attributes['_instanceId']);
 
         return array('class_name' => get_class($instance), 'attributes' => $attributes);
     }
 
     public function serialize(ISerializeStrategy $strategy){
-        $hash = $this->getInstanceId();
+        $hash = 1;
         $arr = array();
 
         $arr[$hash] = self::serialize_alg($this);
 
         $nodes = array();
         $node = $this->head;
+        $cnt = -1;
         while (is_object($node)){
-            $nodes[$node->getInstanceId()] =  self::serialize_alg($node);
+            $nodes[$node->getInstanceId()] =  self::serialize_alg($node)+array('counter' => $cnt++);
             $node = $node->next;
         }
         $arr[$hash]['nodes'] = $nodes;
@@ -164,13 +161,13 @@ interface ISerializeStrategy{
 class FileSerializeStrategy implements ISerializeStrategy{
     public function write(array $array){
         $dir = __DIR__;
-        $file_name = 'file.csv';
+        $file_name = 'file.txt';
         $local_file = $dir . DIRECTORY_SEPARATOR . $file_name;
         if (!$fp = fopen($local_file, 'w')) {
              echo "Не могу открыть файл ($local_file)";
              exit;
         }
-        fwrite($fp, '<?php return ' . var_export($array, true) . ';');
+        fwrite($fp, '<?php return ' . var_export($array, true) . '; ?>');
         fclose($fp);
         return $local_file;
     }
@@ -181,7 +178,7 @@ class FileSerializeStrategy implements ISerializeStrategy{
              exit;
         }
         $array = include($file);
-        unlink($file);
+        # unlink($file);
         return reset($array);
 
     }
@@ -199,144 +196,153 @@ class JSONSerializeStrategy implements ISerializeStrategy{
 }
 
 # Контрольный пример
-# $arr = array(
-#     1 => array(
-#         'class_name' => 'ListRandDerived',
-#         'attributes' => array(
-#             'head' => array(
-#                 'type' => 'object',
-#                 'value' => 1,
-#                 ),
-#             'tail' => array(
-#                 'type' => 'object',
-#                 'value' => 5,
-#                 ),
-#             'count' => array(
-#                 'type' => 'integer',
-#                 'value' => 5,
-#                 ),
-#             ),
-#         'nodes' => array(
-#             1 => array(
-#                 'class_name' => 'ListNode',
-#                 'attributes' => array(
-#                     'prev' => array(
-#                         'type' => 'NULL',
-#                         'value' => null,
-#                         ),
-#                     'next' => array(
-#                         'type' => 'object',
-#                         'value' => 2,
-#                         ),
-#                     'rand' => array(
-#                         'type' => 'NULL',
-#                         'value' => null,
-#                         ),
-#                     'data' => array(
-#                         'type' => 'boolean',
-#                         'value' => true,
-#                         ),
-#                     ),
-#                 ),
-#             '2' => array(
-#                 'class_name' => 'ListNodeDerived',
-#                 'attributes' => array(
-#                     'prev' => array(
-#                         'type' => 'object',
-#                         'value' => 1,
-#                         ),
-#                     'next' => array(
-#                         'type' => 'object',
-#                         'value' => 3,
-#                         ),
-#                     'rand' => array(
-#                         'type' => 'object',
-#                         'value' => 2,
-#                         ),
-#                     'data' => array(
-#                         'type' => 'string',
-#                         'value' => 'test_string',
-#                         ),
-#                     ),
-#                 ),
-#             3 => array(
-#                 'class_name' => 'ListNode',
-#                 'attributes' => array(
-#                     'prev' => array(
-#                         'type' => 'object',
-#                         'value' => 2,
-#                         ),
-#                     'next' => array(
-#                         'type' => 'object',
-#                         'value' => 4,
-#                         ),
-#                     'rand' => array(
-#                         'type' => 'object',
-#                         'value' => 5,
-#                         ),
-#                     'data' => array(
-#                         'type' => 'integer',
-#                         'value' => 777,
-#                         ),
-#                     ),
-#                 ),
-#             4 => array(
-#                 'class_name' => 'ListNodeDerived',
-#                 'attributes' => array(
-#                     'prev' => array(
-#                         'type' => 'object',
-#                         'value' => 3,
-#                         ),
-#                     'next' => array(
-#                         'type' => 'object',
-#                         'value' => 5,
-#                         ),
-#                     'rand' => array(
-#                         'type' => 'object',
-#                         'value' => 1,
-#                         ),
-#                     'data' => array(
-#                         'type' => 'float',
-#                         'value' => 3.14,
-#                         ),
-#                     ),
-#                 ),
-#             '5' => array(
-#                 'class_name' => 'ListNode',
-#                 'attributes' => array(
-#                     'prev' => array(
-#                         'type' => 'object',
-#                         'value' => 3,
-#                         ),
-#                     'next' => array(
-#                         'type' => 'NULL',
-#                         'value' => null,
-#                         ),
-#                     'rand' => array(
-#                         'type' => 'NULL',
-#                         'value' => null,
-#                         ),
-#                     'data' => array(
-#                         'type' => 'array',
-#                         'value' => array('test'=>1, 2, array()),
-#                         ),
-#                     ),
-#                 ),
-#             ),
-#
-#     ),
-# );
-# $input = json_encode($arr);
+$arr = array(
+    1 => array(
+        'class_name' => 'ListRandDerived',
+        'attributes' => array(
+            'head' => array(
+                'type' => 'object',
+                'value' => 1,
+                ),
+            'tail' => array(
+                'type' => 'object',
+                'value' => 5,
+                ),
+            'count' => array(
+                'type' => 'integer',
+                'value' => 5,
+                ),
+            ),
+        'nodes' => array(
+            1 => array(
+                'class_name' => 'ListNode',
+                'attributes' => array(
+                    'prev' => array(
+                        'type' => 'NULL',
+                        'value' => null,
+                        ),
+                    'next' => array(
+                        'type' => 'object',
+                        'value' => 2,
+                        ),
+                    'rand' => array(
+                        'type' => 'NULL',
+                        'value' => null,
+                        ),
+                    'data' => array(
+                        'type' => 'boolean',
+                        'value' => true,
+                        ),
+                    ),
+                'counter' => 0,
+                ),
+            2 => array(
+                'class_name' => 'ListNodeDerived',
+                'attributes' => array(
+                    'prev' => array(
+                        'type' => 'object',
+                        'value' => 1,
+                        ),
+                    'next' => array(
+                        'type' => 'object',
+                        'value' => 3,
+                        ),
+                    'rand' => array(
+                        'type' => 'object',
+                        'value' => 2,
+                        ),
+                    'data' => array(
+                        'type' => 'string',
+                        'value' => 'test_string',
+                        ),
+                    ),
+                'counter' => 1,
+                ),
+            3 => array(
+                'class_name' => 'ListNode',
+                'attributes' => array(
+                    'prev' => array(
+                        'type' => 'object',
+                        'value' => 2,
+                        ),
+                    'next' => array(
+                        'type' => 'object',
+                        'value' => 4,
+                        ),
+                    'rand' => array(
+                        'type' => 'object',
+                        'value' => 5,
+                        ),
+                    'data' => array(
+                        'type' => 'integer',
+                        'value' => 777,
+                        ),
+                    ),
+                'counter' => 2,
+                ),
+            4 => array(
+                'class_name' => 'ListNodeDerived',
+                'attributes' => array(
+                    'prev' => array(
+                        'type' => 'object',
+                        'value' => 3,
+                        ),
+                    'next' => array(
+                        'type' => 'object',
+                        'value' => 5,
+                        ),
+                    'rand' => array(
+                        'type' => 'object',
+                        'value' => 1,
+                        ),
+                    'data' => array(
+                        'type' => 'float',
+                        'value' => 3.14,
+                        ),
+                    ),
+                'counter' => 3,
+                ),
+            5 => array(
+                'class_name' => 'ListNode',
+                'attributes' => array(
+                    'prev' => array(
+                        'type' => 'object',
+                        'value' => 3,
+                        ),
+                    'next' => array(
+                        'type' => 'NULL',
+                        'value' => null,
+                        ),
+                    'rand' => array(
+                        'type' => 'NULL',
+                        'value' => null,
+                        ),
+                    'data' => array(
+                        'type' => 'array',
+                        'value' => array('test'=>1, 2, array()),
+                        ),
+                    ),
+                'counter' => 4,
+                ),
+            ),
 
-$input = '{"1":{"class_name":"ListRandDerived","attributes":{"head":{"type":"object","value":1},"tail":{"type":"object","value":2},"count":{"type":"integer","value":5}},"nodes":{"1":{"class_name":"ListNode","attributes":{"prev":{"type":"NULL","value":null},"next":{"type":"object","value":2},"rand":{"type":"NULL","value":null},"data":{"type":"boolean","value":true}}},"2":{"class_name":"ListNodeDerived","attributes":{"prev":{"type":"object","value":1},"next":{"type":"object","value":3},"rand":{"type":"object","value":2},"data":{"type":"string","value":"test_string"}}},"3":{"class_name":"ListNode","attributes":{"prev":{"type":"object","value":2},"next":{"type":"object","value":4},"rand":{"type":"object","value":5},"data":{"type":"integer","value":777}}},"4":{"class_name":"ListNodeDerived","attributes":{"prev":{"type":"object","value":3},"next":{"type":"object","value":5},"rand":{"type":"object","value":1},"data":{"type":"float","value":3.14}}},"5":{"class_name":"ListNode","attributes":{"prev":{"type":"object","value":3},"next":{"type":"NULL","value":null},"rand":{"type":"NULL","value":null},"data":{"type":"array","value":{"test":1,"0":2,"1":[]}}}}}}}';
-$instance = ListRand::deserialize($input);
+    ),
+);
+# Пример использования
+$file_class = new FileSerializeStrategy;
+$input = $file_class->write($arr);
+$instance = ListRand::deserialize($file_class, $input);
+$file = $instance->serialize($file_class);
 
-$output = $instance->serialize();
-$instance2 = ListRand::deserialize($output);
+$js_class = new JSONSerializeStrategy;
+$json_input = $js_class->write($arr);
+$instance2 = ListRand::deserialize($js_class, $json_input);
+$json_result = $instance2->serialize($js_class);
+
+
 
 # # Нагрузочное тестирование
 # echo '<table>';
-# $max = 74999; # Предел после которого apache2 ловит segfault
 # # for($j=5000; $j<=300000; $j=$j+5000){
 # $test_arr = array();
 # $test_arr[1]['class_name'] = 'ListRand';
